@@ -13,7 +13,7 @@ import time
 ev3 = EV3Brick()
 gyro = GyroSensor(Port.S2)
 ser = UARTDevice(Port.S3, baudrate=115200)
-
+cs = ColorSensor(Port.S1)
 #==========[motors]==========
 grab_motor = Motor(Port.A)
 shooting_motor = Motor(Port.D)
@@ -25,16 +25,16 @@ robot = DriveBase(left_motor, right_motor, wheel_diameter=56, axle_track=115)
 #==========[target_angle turn(gyro)]==========
 def turn(target_angle, power):
     
-    #left_motor.run(power)
-    #right_motor.run(-power)
-    #while True:
-    #    angle=gyro.angle()
-    #    
-    #    if abs(angle)>target_angle-2:
-    #        left_motor.stop()
-    #        right_motor.stop()
-    #        break
-    robot.turn()
+    # left_motor.run(power)
+    # right_motor.run(-power)
+    # while True:
+    #     angle=gyro.angle()
+        
+    #     if abs(angle)>target_angle-2:
+    #         left_motor.stop()
+    #         right_motor.stop()
+    #         break
+    # robot.turn()
     print('robot turn')
     robot.drive(power, power)
     while True:
@@ -74,23 +74,24 @@ def pd_control(cam_data, kp, kd, power):
 def grab(command):
     if command == 'motion3':
         #close
-        grab_motor.run_until_stalled(100,Stop.COAST,duty_limit=50)
+        grab_motor.run_until_stalled(100,Stop.COAST,duty_limit=30)
+        shooting_motor.run_until_stalled(-120,Stop.COAST,duty_limit=30)
         #set_zero point
         grab_motor.reset_angle(0)
     elif command == 'motion1':
         #open1
-        grab_motor.run_until_stalled(-100,Stop.COAST,duty_limit=50)
+        grab_motor.run_until_stalled(-100,Stop.COAST,duty_limit=30)
     elif command == 'motion2':
         #open2
-        grab_motor.run_target(100,-100)
+        grab_motor.run_target(500,-100)
 
 def shoot(command):
     if command == 'zero':
         #zero_position
-        shooting_motor.run_until_stalled(-100,Stop.COAST,duty_limit=50)
+        shooting_motor.run_until_stalled(-120,Stop.COAST,duty_limit=30)
     elif command == 'shoot':
         #shooting
-        shooting_motor.run(1750)
+        shooting_motor.run(3000)
         time.sleep(0.25)
         shooting_motor.stop()
 
@@ -114,22 +115,36 @@ while True:
     data = ser.read_all()
     # 데이터 처리 및 결과 필터링
     try:
+        while cs.color() != Color.BLUE:
+            pass
+        robot.drive(-100,0)
+        turn(0,100) #파란색 인식하면 후진, 상대방 진영 바라보기
+
+        #while cs.color() == Color.BLUE:
+        #       robot.drive(-100,0)
+        #       turn(0,100)
+        #       break
+   
+   
         filter_result = process_uart_data(data)
         #filter_result[0] : x, filter_result[1] : y
         if filter_result[0]!= -1 and filter_result[1]!= -1:
         # if filter_result[0]!= -1 and filter_result[1]!= -1:
-            if filter_result[1] > 90: #공이 카메라 화면 기준으로 아래에 위치 = 로봇에 가까워졌다
+            if filter_result[1] > 80: #공이 카메라 화면 기준으로 아래에 위치 = 로봇에 가까워졌다
                 robot.straight(100) #강제로 앞으로 이동
                 grab('motion3') #공을 잡기
-                time.sleep(1) #동작간 딜레이
+                time.sleep(0.5) #동작간 딜레이
                 turn(0,100) #정면(상대방 진영)바라보기
-                time.sleep(1) #동작간 딜레이
+                time.sleep(0.5) #동작간 딜레이
                 grab('motion1') #슛을 위한 열기
                 time.sleep(0.5) #동작간 딜레이
                 shoot('shoot') #공 날리기
                 time.sleep(0.5) #동작간 딜레이
                 shoot('zero')
                 grab('motion2') 
+
+                
+
             else: #공이 카메라 화면 기준 멀리 위치해 있으면 chase한다
                 pd_control(filter_result[0], kp=0.5, kd=0.1, power=100)
         # else: # 센서가 공을 보지 못했을 경우의 움직임.
@@ -140,14 +155,24 @@ while True:
     except:
         pass
 
+
+
 while True:
     try:
         data = ser.read_all()
-        filter_result = process_uart_data(data)
+        filter_result = process_u5art_data(data)
         if filter_result[0]!= -1 and filter_result[1]!= -1:
             print(filter_result)
             pd_control(filter_result[0], kp=0.5, kd=0.1, power=100)
+            #**센서 값(filter_result[0])**을 기준으로 현재 상태와 목표 값의 차이(오차)를 계산.
+            #**비례 게인(kp)**을 사용하여 오차에 비례한 출력을 생성.
+            #**미분 게인(kd)**을 사용하여 오차 변화율에 따른 출력을 추가.
+            #최종 출력값(power + PD 결과)으로 모터의 움직임이나 방향을 제어.
         wait(10)
     except:
         pass
         
+
+# while True:
+#     color = cs.color()
+#     print(color)
